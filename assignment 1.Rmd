@@ -1,0 +1,92 @@
+---
+title: "Assignment 1"
+output: html_document
+date: '2022-09-26'
+---
+
+
+
+```{r, cache=TRUE}
+library(haven)
+chs21 <- read_sas("chs2020_public.sas7bdat")
+
+#chs21 <- read_sas("https://www1.nyc.gov/assets/doh/downloads/sas/episrv/chs2020_public.sas7bdat")
+#Note for Prof. Waldron: My internet is down, so I downloaded the file from the directory. Please use the alternate code to set chs 21 for yourself.
+
+```
+```
+```{r}
+library(dplyr)
+chs21_recode <-
+  transform(chs21, 
+            newrace = recode_factor(newrace, `1`="White/N Afri/MidEastern, non-Hispanic", 
+                                                 `2`="Black, non-Hispanic", 
+                                                 `3`="Hispanic", 
+                                                 `4`="Asian/PI, non-Hispanic",
+                                                 `5`="Other, non-Hispanic"),
+            agegroup = recode_factor(agegroup, 
+                                     `1` = "18-24",
+                                     `2` = "25-44",
+                                     `3` = "45-64",
+                                     `4` = "65+"),
+            hiv12months20 = recode_factor(hiv12months20,
+                                          `2` = "No",  
+                                          `1` = "Yes"),
+            condom20 = recode_factor(condom20,
+                                     `2` = "No",
+                                     `1` = "Yes"),
+            sexpartner = recode_factor(sexpartner,
+                                     `1` = "None",
+                                     `2` = "One",
+                                     `3` = "Two",
+                                     `4` = "Three or more"),
+            ## may or may not want sexpartner as an ordered factor: if ordered, 
+            ## R will add a test for trend to regression analyses
+            sexpartner = factor(sexpartner, ordered = TRUE))
+summary(chs21)
+```
+
+
+```{r}
+library(survey)
+chs.dsgn <-
+  svydesign(
+    ids = ~ 1,
+    strata = ~ strata,
+    weights =  ~ wt21_dual, # match to current year dataset
+    data = chs21_recode, # match to current year dataset 
+    nest = TRUE,
+    na.rm = TRUE
+  )
+```
+
+```{r}
+library(readr)
+chs <-
+  read_table(
+    "chs2020_public.sas7bdat",
+    col_types = cols_only(
+      agegroup = col_factor(levels = c("White/N Afri/MidEastern, non-Hispanic", "Black, non-Hispanic", "Hispanic", "Asian/PI, non-Hispanic","Other, non-Hispanic")),
+       hiv12months20 = col_factor(levels = c("No", "Yes")),
+       condom20 = col_factor(levels = c("No", "Yes")),
+      sexpartner = col_factor(levels = c ("None", 
+                                                 "One", 
+                                                 "Two", 
+                                                 "Three or more",
+                                                 "Other, non-Hispanic")),  X6 = col_skip()
+    )
+  ) 
+```
+
+```{r, message = FALSE}
+library(table1)
+table1(~ ., data = chs)
+```
+
+```{r}
+library(svydiags)
+fit <- svyglm(hiv12months20 ~ condom20,
+              design = chs.dsgn,
+              family="quasibinomial")
+summary(fit)
+```

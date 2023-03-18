@@ -1,0 +1,241 @@
+---
+title: "Assignment 3"
+author: "Fahmid Sarwar"
+date: '2022-11-08'
+output: html_document
+---
+
+For this assignment you will analyze the following dataset. In recognition of your increasing independence, there are no previous semester exemplars given.
+
+Grossberg, A., Mohamed, A., Elhalawani, H. et al. Imaging and clinical data archive for head and neck squamous cell carcinoma patients treated with radiotherapy. Sci Data 5, 180173 (2018). https://doi.org/10.1038/sdata.2018.173 Links to an external site. 
+
+The dataset is linked to under the heading "Data Citations".  Go to https://doi.org/10.7937/K9/TCIA.2017.umz8dv6s Links to an external site.and the dataset you need is listed as "Clinical (XLS)". 
+
+#In this assignment, we are analyzing a dataset from the Cancer Imaging Archive, on Head and Neck Squamous Cell Carcinoma (HNSCC), where data for 215 patients has been included in the following excel spreadsheet. The excel data is a subset of HNSCC data collected at the MD Anderson Cancer Center from 2003 to 2013.
+
+```{r, message=FALSE, warning=FALSE}
+library(readxl)
+url <- "https://wiki.cancerimagingarchive.net/download/attachments/24281354/Patient%20and%20Treatment%20Characteristics.xls?version=1&modificationDate=1531497278289&api=v2"
+destfile <- "Patient_20and_20Treatment_20Characteristics.xls"
+curl::curl_download(url, destfile)
+carcdat <- read_excel(destfile)
+```
+
+#Recode age in 10-year intervals (e.g. 30-39, 40-49, ...), combining categories as needed when there are too few participants in a category (for example, there are not enough patients 80+ to form their own category).
+#Create and use a new stage variable without A, B sub-stages (the "Stage" column has stages I, II, III, IV followed sometimes by sub-stages A or B). The recoded stage should still be a categorical variable.
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+table(carcdat$Age)
+carcdat<- carcdat %>% 
+  mutate(
+    age_group = dplyr::case_when(
+      Age <= 40            ~ "20-40",
+      Age > 40 & Age <= 50 ~ "41-50",
+      Age > 50 & Age <= 60 ~ "51-60",
+      Age > 60 & Age <= 70 ~ "61-70",
+      Age > 70 & Age <= 91 ~ "71-95"
+    ),
+    Stage = recode_factor(
+      Stage,
+      "IVA" = "IV",
+      "IVB" = "IV",
+  ))
+```
+
+# 1. Create an "Epi table 1" summarizing the relevant characteristics of the dataset. Provide a short caption for your table. 
+
+```{r, message=FALSE, warning=FALSE}
+library(table1)
+library(stringr)
+
+names(carcdat)<-str_replace_all(names(carcdat), c(" " = "_"))
+colnames(carcdat)[colnames(carcdat) == "BMI_start_treat_(kg/m2)"] ="BMI"
+colnames(carcdat)[colnames(carcdat) == "Survival__(months)"] ="Survival"
+
+carcdatdesc <- mutate(carcdat,
+    Smoking_History = factor(Smoking_History, levels = 0:2, labels = c("Never", "Fewer Than 10 pack", "More Than 10 pack")),
+    Current_Smoker = factor(Current_Smoker, levels = 0:1, labels = c("No", "Yes"))
+                                                     )
+label(carcdatdesc$Sex) <- "Sex"
+label(carcdatdesc$Age) <- "Age"
+label(carcdatdesc$age_group)<- "Age Groups"
+label(carcdatdesc$Diag) <- "Diagnosis"
+label(carcdatdesc$Stage) <- "Stage"
+label(carcdatdesc$`Smoking_History`) <- "Smoking History"
+label(carcdatdesc$`Current_Smoker`) <- "Current Smoker"
+label(carcdatdesc$BMI) <- "BMI"
+table1(~Sex + Age + + age_group + BMI + Diag + Stage+ Smoking_History + Current_Smoker, 
+       caption = "Patient Characteristics from HNSCC Dataset. 
+       Age and BMI are presented as continuous variables, and a new variable Age group has been created. Most frequent Diagnosis is Carcinoma of Base of Tongue (BOT) and Carcinoma of Tonsil. Most frequent Stage of tumor, as defined by American Joint Committee on Cancer, is Stage IV. Stage IV entries have been simplified by omitting A/B sub stages.",
+       data = carcdatdesc)
+```
+
+# 2. Create Kaplan-Meier plots for the Current Smoker, Age, and Stage variables (feel free to include others you find useful for discussion, these are chosen as important variables that are expected to cause differences in survival). Label your axes, provide axis titles, and a legend if necessary. Provide figure captions including a descriptive title and interpretation.
+
+```{r, message=FALSE, warning=FALSE}
+library(survival)
+library(survminer)
+
+colnames(carcdat)[colnames(carcdat) == "Alive_or_Dead"] ="Status"
+
+carcdat$Status<-(gsub("Alive", "0",
+                 gsub("Dead", "1",carcdat$Status)))
+Stat_num <- as.numeric(carcdat$Status)
+
+#KM plot for Current Smokers
+colnames(carcdat)[colnames(carcdat) == "Current Smoker"] ="Current_Smoker"
+
+with(carcdat, Surv(Survival, Stat_num))
+fit <- survminer::surv_fit(Surv(Survival, Stat_num) ~ Current_Smoker, data=carcdat)
+survminer::ggsurvplot(fit,
+           xlab = "Time (Months)",
+           ylab = "Survival Probability",
+           legend.title="Current Smoker",
+           legend.labs=c("No", "Yes"),
+           risk.table = TRUE,
+           pval=TRUE)
+```
+
+#KM plot for CUrrent Smokers show that survival rate is higher for non smokers than smokers. However, p value of 0.085 means that result is not very significant.
+
+```{r, message=FALSE, warning=FALSE}
+#KM plot for Age Groups
+colnames(carcdat)[colnames(carcdat) == "Age Groups"] ="age_group"
+table(carcdat$age_group)
+with(carcdat, Surv(Survival, Stat_num))
+fit <- survminer::surv_fit(Surv(Survival, Stat_num) ~ age_group, data=carcdat)
+survminer::ggsurvplot(fit,
+           xlab = "Time (Months)",
+           ylab = "Survival Probability",
+           legend.title="Age Groups",
+           legend.labs=c("20-40", "41-50", "51-60", "61-70", "71-95"),
+           risk.table = TRUE,
+           pval=TRUE)
+```
+
+#Age group KM plot shows steepest decline in survival rate is for 61-70 age group. Age groups 20-40 and 71-95 however, only have a handful of entries, so may be inaccurate. p value is greater than 0.05, so not very significant.
+
+```{r, message=FALSE, warning=FALSE}
+#KM plot for Stage
+table(carcdat$Stage)
+with(carcdat, Surv(Survival, Stat_num))
+fit <- survminer::surv_fit(Surv(Survival, Stat_num) ~ Stage, data=carcdat)
+survminer::ggsurvplot(fit,
+           xlab = "Time (Months)",
+           ylab = "Survival Probability",
+           legend.title="Tumor Stage",
+           legend.labs=c("IV", "III", "II", "I"),
+           risk.table = TRUE,
+           pval=TRUE)
+```
+
+#Tumor Stage KM plot shows steepest decline for Stage I, but again, stage I only has a handful of entries so may be inaccurate. p value =0.0037 so survival outcomes are significantly different between stages..
+
+# 3. Draw a Directed Acyclic Graph (DAG) corresponding to the hypothesized exposures of current smoking and smoking history, with overall survival as the outcome. Try using http://www.dagitty.net/ Links to an external site.to draw your DAG online, then use the R code it provides to create the DAG in your program. A couple notes about the DAG here - try to communicate these through your DAG, and include them in your discussion of the DAG. 
+
+```{r, message=FALSE, warning=FALSE}
+library(dagitty)
+DAG <- dagitty('
+dag {
+"Current Smoker" [exposure,pos="-2.118,1.502"]
+"HPV Status" [latent,pos="-0.620,0.017"]
+"Overall Survival" [outcome,pos="1.412,0.540"]
+"Smoking History" [exposure,pos="-2.113,0.522"]
+Age [pos="-0.589,-1.040"]
+"Current Smoker" -> "Overall Survival"
+"Current Smoker" -> "Smoking History"
+"Current Smoker" <-> "HPV Status"
+"HPV Status" -> "Overall Survival"
+"HPV Status" <-> "Smoking History"
+"HPV Status" <-> Age
+"Smoking History" -> "Overall Survival"
+Age -> "Overall Survival"
+Age -> "Smoking History"
+}
+
+
+')
+plot(DAG)
+```
+
+#Age likely has both a direct effect on survival, as well as an effect on smoking history due to the accumulation of pack-years with age, making it a potential confounder. However, note that assigning the effect of smoking history to age may lead to an under-estimate of the effect of smoking history since the effect of smoking may actually be stronger than the effect of age on survival outcomes. Can you distinguish this from the present study? This is a point for discussion, you do not have to perform additional analysis. 
+#Most head and neck cancers are caused either by HPV or by smoking/alcohol exposure, therefore HPV status is expected to be negatively associated with smoking status and history among head and neck cancer cases. HPV-caused cancers are more treatable than smoking/alcohol-caused cancers, and are therefore positively associated with survival. HPV-associated cancers also tend to occur in younger patients than smoking-associated cancers. HPV is mostly unmeasured in this dataset. Include (unknown) HPV status in your DAG and discuss its potential impact on your analysis.
+
+#Following above guidelines, Smoking History is taken as main exposure with Survival as outcome. Current somker is separate exposure, but it has been modelled with Smoking History on its causal path as well, from the logic that current smoker status will directly affect smoking history. Age is modelled as a confounder affecting both Smoking history and Overall survival. HPV status has been included as a mediator, because from above description in assignment, it could not be determined what the causal directions were of HPV as a predictor, only associations can be determined, so HPV was modelled with bidirectional arrows to all other variables, except Survival.
+
+# 4. a) Perform univariate regressions for each of your predictor variables to estimate their crude associations with survival.
+```{r, message=FALSE, warning=FALSE}
+currentsmokercoxfit <- coxph(Surv(Survival, Stat_num) ~ Current_Smoker, data = carcdat)
+summary(currentsmokercoxfit)
+```
+
+```{r, message=FALSE, warning=FALSE}
+carcdat <- mutate(carcdat,
+    Smoking_History = factor(Smoking_History, levels = 0:2, labels = c("Never", "Fewer Than 10 pack", "More Than 10 pack")))
+smokinghistorycoxfit<- coxph(Surv(Survival, Stat_num) ~ Smoking_History, data = carcdatdesc)
+summary(smokinghistorycoxfit)
+```
+
+```{r, message=FALSE, warning=FALSE}
+sexcoxfit<- coxph(Surv(Survival, Stat_num) ~ Sex, data = carcdat)
+summary(sexcoxfit)
+```
+
+```{r, message=FALSE, warning=FALSE}
+stagecoxfit<- coxph(Surv(Survival, Stat_num) ~ Stage, data = carcdat)
+summary(stagecoxfit)
+```
+
+```{r, message=FALSE, warning=FALSE}
+agegroupcoxfit<-  coxph(Surv(Survival, Stat_num) ~ age_group, data = carcdat)
+summary(agegroupcoxfit)
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+agecoxfit<-  coxph(Surv(Survival, Stat_num) ~ Age, data = carcdat)
+summary(agecoxfit)
+```
+
+#Doing univariate regressions for each predictor, with Cox PH model, Smoking history,the main exposure, has a not significant p value for logrank and Wald tests. Stage and Age(continuous) is found to have significant differences between level, with p values less than 0.s. So hazard ratios/relative risks for these predictors are significantly different between levels. For age, each unit change therefore changes risk significantly.
+
+# b) Perform a multivariate regression that is justified by your causal hypothesis and your DAG, to estimate the total effect of smoking history on survival. 
+```{r, message=FALSE, warning=FALSE}
+multicoxfit<-  coxph(Surv(Survival, Stat_num) ~ Current_Smoker+ + Smoking_History + Sex + Stage + age_group+ Age, data = carcdat)
+summary(multicoxfit)
+```
+
+#In multivariate regression, only Stage I variable provides a significant hazard ratio difference. In contrast to the univariate regressions where age(continuous) was also significant.
+
+# c) Create a diagnostic plot to test the proportional hazards assumption, such as a log-minus-log plot and Schoenfeld residuals. Does the proportional hazards assumption seem justified?
+```{r, message=FALSE, warning=FALSE}
+fit2 <- survminer::surv_fit(Surv(Survival, Stat_num) ~ Smoking_History, data=carcdat)
+ggsurvplot(fit2, fun = "cloglog", 
+           xlab = "Time (Months)",
+           ylab = "Log-Log Results",
+           legend.title="Smoking History",
+           legend.labs=c("Never Smoker", "Fewer than 10 pack years", "10 or more pack years"),
+           pval=TRUE)
+```
+
+#Fitting a plot to main variable Smoking History, log minus log results are mostly parallel for Never smoker and 10 or more pack year levels, so between these two levels, PH assumption is not violated. However, fewer than 10 pack year level overlaps with both other levels, so for this level PH assumption is violated compared to both other levels.
+
+```{r, message=FALSE, warning=FALSE}
+fitzph <- cox.zph(smokinghistorycoxfit)
+plot(fitzph)
+fitzph
+```
+
+#For Schoenfeld residuals, there is no sharp trend, and p values are insignificant, so this indicates PH assumption is not being violated
+
+
+# d) Provide interpretation of your regression analysis. What hypothesis did you test? What is your conclusion? 
+
+#I tested the hypothesis that smoking history is significantly associated with survival outcome for the patients in the HNSCC dataset, using a COX PH model. However, my analysis shows that Smoking history, either by itself or with other associated predictors, does not show significant differences in relative risks for Survival Outcomes. Diagnostic plots show that, for the most part, COX PH assumption is not violated for a model of Smoking History and Survival Outcome. 
+#There are limitations to this analysis, the biggest being that it is a very small dataset of 215 entries, and several entries for the predictors have missing values. The DAG model created is also a questionable one, and more data is required before a better model can be created.
+
+
+
+
+

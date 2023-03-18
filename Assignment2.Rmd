@@ -1,0 +1,277 @@
+---
+title: "Assignment 2: loglinear models"
+author: "Archana Dwivedi"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+# Creating the dataset
+
+__Attribution__: The code for selecting random predictors to create the final dataset (used in the subsequent analysis) was provided by Prof Levi Waldron.
+
+## Set your random seed
+
+This is a trick to make sure that everyone in the class gets a different but 
+reproducible random number generation. Enter your name here, and run this code to 
+set your random number seed. Note that `|>` is the built-in R pipe, mostly 
+equivalent to `%>%`.
+
+```{r}
+utf8ToInt("Archana Dwivedi") |>  # converts each character to an integer
+  sum() |>  # sum those integers to get a single number. You can stop the piping here if you want to see what your random number seed is.
+  set.seed() # this actually sets the random number generating seed
+```
+
+## Import data
+
+See https://www1.nyc.gov/assets/doh/downloads/pdf/episrv/chs2019-codebook.pdf, for the codebook, other years, and further information about the dataset.
+
+Import:
+```{r, cache=TRUE}
+library(haven)
+chs19 <- read_sas("https://www1.nyc.gov/assets/doh/downloads/sas/episrv/chs2019_public.sas7bdat")
+```
+
+These are columns we must keep:
+```{r}
+keepcols <- c("strata", "wt20_dual", "nutrition47")
+```
+
+These are columns we want to remove:
+```{r}
+# require a data use agreement
+donotuse <-
+  c(
+    "industry_groupnew",
+    "uhf34",
+    "borough",
+    "dphonew06",
+    "indpho",
+    "lowinchousing19",
+    "howlong19new",
+    "everevicted_q1",
+    "newgenderid19",
+    "nativeindig",
+    "demog183",
+    "demog135r",
+    "asianancestry",
+    "countrybirth19",
+    "bthregion2",
+    "demog192r",
+    "numadults2",
+    "occupation_groupnew"
+  )
+# administrative variables
+admvars <-
+  c("survey",
+    "strata_q1",
+    "cid",
+    "qxvers",
+    "wt20_dual_q1",
+    "wt_compare")
+# requiring different weights
+q1 <- grep("q1$", colnames(chs19), value = TRUE)
+```
+
+
+Randomly select four of the remaining columns for inclusion in your analysis. 
+If you get a variable that is unusable for some reason, add it to the `donotuse`
+vector above then re-run the code.
+
+```{r, message = FALSE}
+samplecols <- colnames(chs19)[!colnames(chs19) %in% c(keepcols, admvars, donotuse, q1)]
+(myrandomcols <- sample(samplecols, 4))
+```
+
+Finally, create your personal dataset
+
+```{r, message=FALSE}
+library(dplyr)
+mydata <- dplyr::select(chs19, keepcols, myrandomcols)
+```
+```{r} 
+head(mydata)
+```
+
+
+# Recoding
+
+```{r}
+library(dplyr)
+mydata_recode <-
+  transform(mydata, 
+            newage40new = recode_factor(age40new, 
+                                     `1` = "40-44",
+                                     `2` = "45-64",
+                                     `3` = "65",
+                                     ),
+           
+            newexercise19 = recode_factor(exercise19,
+                                     `1` = "yes",
+                                     `2` = "No"),
+             newestillasthmaall = recode_factor(stillasthmaall,
+                                     `1` = "yes",
+                                     `2` = "No"),
+            newevercolon19 = recode_factor(evercolon19 ,
+                                     `1` = "yes",
+                                     `2` = "No")
+            )
+head(mydata_recode)
+```
+
+
+# Hypothesis
+The objective of this analysis is to study the association between HIV testing and condom usage. The hypothesis is that there is positive association between the two based on the postulation that people who are more sexually active are more likely both to use condoms and to have HIV tests. 
+
+
+<!-- # Descriptive Statistics -->
+<!-- ```{r} -->
+<!-- require(table1) -->
+
+<!-- label(chs21_recode$agegroup)             <- "Age" -->
+<!-- label(chs21_recode$newrace)              <- "Race" -->
+<!-- label(chs21_recode$hiv12months20)        <- "HIV test status" -->
+<!-- label(chs21_recode$condom20)             <- "Condom Usage" -->
+<!-- label(chs21_recode$sexpartner)           <- "Number of Sexual Partners" -->
+
+<!-- table1( -->
+<!--   ~ hiv12months20 + condom20 + agegroup + newrace + sexpartner,  -->
+<!--   data=chs21_recode, -->
+<!--   caption = "Table 1: Descriptive statistics of the entire NYC Community Health Survey public data set. The overall dataset is composed of 8781 participants out of which only 28.6% reported taking an HIV test in the past 12 months and 17.3% reported using a condom.", -->
+<!--   ) -->
+<!-- ``` -->
+
+<!-- Table 1 summarizes the descriptive statistics of the entire NYC Community Health Survey public data set. The overall data set is composed of 8781 participants out of which only 28.6% reported taking an HIV test in the past 12 months and 17.3% reported using a condom. As the data comprised of too many missing values, further analysis is performed on a filtered data set in which rows, where either the value of the predictor variable (Condom Usage) or the outcome variable (HIV test status) is missing, have been removed. -->
+
+<!-- ```{r} -->
+<!-- chs21_recode_filter <-filter(chs21_recode, !is.na(hiv12months20) & !is.na(condom20)) -->
+
+<!-- label(chs21_recode_filter$agegroup)             <- "Age" -->
+<!-- label(chs21_recode_filter$newrace)              <- "Race" -->
+<!-- label(chs21_recode_filter$hiv12months20)        <- "HIV test status" -->
+<!-- label(chs21_recode_filter$condom20)             <- "Condom Usage" -->
+<!-- label(chs21_recode_filter$sexpartner)           <- "Number of Sexual Partners" -->
+
+<!-- table1( -->
+<!--   ~ hiv12months20 + condom20 + agegroup + newrace + sexpartner,  -->
+<!--   data=chs21_recode_filter, -->
+<!--   caption = "Table 2: Descriptive statistics of filtered dataset in which rows, where either the value of the predictor variable (Condom Usage) or the outcome variable (HIV test status) is missing, have been removed.", -->
+<!--   ) -->
+<!-- ``` -->
+
+
+<!-- Table 2  summarizes the descriptive statistics filtered data set used to perform the analysis described herein. The sample size is composed of 5028 participants out of which 30% reported using a condom in their last sexual encounter and 35.5% reported taking an HIV test in the past 12 months. A majority of the participants were in the 25-44 age group (47.5%) and ~10% were older than 65 years of age. The sample comprised of White/N Afri/MidEastern (33.7%), Black (20.1%), Hispanic (30.7%), Asian/PI (12.3%), and other non-Hispanic ethnicities (3.3%). All the participants reported having atleast one sexual partner and 11.4% reported having three or more partners, in the past 12 months. -->
+
+<!-- ```{r} -->
+<!-- table1( -->
+<!--   ~ agegroup + newrace + sexpartner | hiv12months20 * condom20,  -->
+<!--   data=chs21_recode_filter, -->
+<!--   caption = "Table 3: Descriptive statistics of the filtered dataset broken down by HIV test status and Condom usage in the past 12 months.", -->
+<!--   ) -->
+<!-- ``` -->
+
+
+<!-- # Analysis -->
+
+<!-- Table 3 shows a breakdown of the filtered data set by HIV test status and Condom usage. The histograms below show a breakdown of the predictor variable (condom usage) and outcome variable (HIV test status) by age group and ehtnicity. -->
+
+<!-- ```{r} -->
+<!-- library(ggplot2) -->
+
+<!-- ggplot(chs21_recode_filter, aes(x=condom20, fill=agegroup)) +  -->
+<!--   geom_histogram(stat="count", position="fill") + -->
+<!--   labs(title = "Condom usage by age group") -->
+
+<!-- ggplot(chs21_recode_filter, aes(x=hiv12months20, fill=agegroup)) +  -->
+<!--   geom_histogram(stat="count", position="fill") + -->
+<!--   labs(title = "HIV testing by age group") -->
+
+<!-- ggplot(chs21_recode_filter, aes(x=condom20, fill=newrace)) +  -->
+<!--   geom_histogram(stat="count", position="fill") + -->
+<!--   labs(title = "Condom usage by ethnicity") -->
+
+<!-- ggplot(chs21_recode_filter, aes(x=hiv12months20, fill=newrace)) +  -->
+<!--   geom_histogram(stat="count", position="fill") + -->
+<!--   labs(title = "HIV testing by age group") -->
+<!-- ``` -->
+
+<!-- ## Define the Survey  -->
+<!-- Based on code from the NYC CHS web page above: -->
+
+<!-- ```{r} -->
+<!-- library(survey) -->
+<!-- chs.dsgn <- -->
+<!--   svydesign( -->
+<!--     ids = ~ 1, -->
+<!--     strata = ~ strata, -->
+<!--     weights =  ~ wt21_dual, # match to current year dataset -->
+<!--     data = chs21_recode_filter, # match to current year dataset  -->
+<!--     nest = TRUE, -->
+<!--     na.rm = TRUE -->
+<!--   ) -->
+<!-- ``` -->
+
+
+<!-- ## Perform Logistic Regression analysis -->
+
+<!-- From `svyglm` help page:  -->
+<!-- > for binomial and Poisson families use family=quasibinomial() and family=quasipoisson()  -->
+<!-- to avoid a warning about non-integer numbers of successes. The ‘quasi’ versions  -->
+<!-- of the family objects give the same point estimates and standard errors and  -->
+<!-- do not give the warning. -->
+
+<!-- ### Without confounders -->
+
+<!-- Performed a logistic regression analysis between HIV testing status (outcome) and Condom usage (predictor) without taking any confounding factors into account. -->
+
+<!-- ```{r} -->
+<!-- library(svydiags) -->
+<!-- fit <- svyglm(hiv12months20 ~ condom20, -->
+<!--               design = chs.dsgn, -->
+<!--               family="quasibinomial") -->
+<!-- summary(fit) -->
+<!-- ``` -->
+
+
+<!-- ### With confounders -->
+
+<!-- Performed a logistic regression analysis between HIV testing status (outcome) and Condom usage (predictor) taking into account the potential confounding affect of Age group, Race, and Number of sexual partners over the past 12 months. -->
+
+<!-- ```{r} -->
+<!-- library(svydiags) -->
+<!-- fit1 <- svyglm(hiv12months20 ~ condom20 + agegroup + newrace + sexpartner, -->
+<!--               design = chs.dsgn, -->
+<!--               family="quasibinomial") -->
+<!-- summary(fit1) -->
+<!-- ``` -->
+
+<!-- ```{r results = "asis"} -->
+<!-- library(stargazer) -->
+
+<!-- stargazer(fit, fit1, title="Regression Results", type="html") -->
+<!-- ``` -->
+<!-- ## Interpretation of Regression Analysis -->
+
+<!-- From the first model (without confounders), we note that: -->
+
+<!-- * We see that the log odds of being "Untested for HIV" for those not using a condom is $\beta=-0.75$ or odds = $e^\beta=0.47$. While the log odds for those using a condom is higher than the reference group, $\beta=0.49$ or odds = $e^\beta=1.63$. These observations are statistically significant since the p-value is <0.05. -->
+
+<!-- From the second model (with confounders), we note that: -->
+
+<!-- * We see that the log odds of being "Untested for HIV" for those using a condom is higher than the reference group $\beta=0.099$ or odds = $e^\beta=1.104$. But these observations are not statistically significant since the p-value is >0.05. -->
+
+<!-- * The log odds for being untested for HIV for Age group 65 years and above is lower ($\beta=-1.18$) than the reference group 18-25 years of age. -->
+
+<!-- * The log odds for being untested for HIV is highest for the Black ($\beta=1.43$) and Hispanic ($\beta=1.32$) communities tham the reference for White/N Afri/MidEastern non-hispanic ethnicities. These observations are statistically significant since the p-value is <0.05. -->
+
+<!-- From the model comparision, we note that: -->
+
+<!-- * We see that confounding effect reduces the log odds of being untested for HIV from 0.491 to 0.100. -->
